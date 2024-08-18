@@ -19,17 +19,20 @@ connection.connect((err) => {
     console.log('Connected to database');
 });
 
-// Genera un nombre de usuario aleatorio
+// Genera un nombre de usuario aleatorio que no comience con . o -
 const generateUsername = () => {
     const length = Math.floor(Math.random() * (15 - 4 + 1)) + 4;
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     const specialChars = '._-';
-    
+
     let result = '';
     let hasDot = false;
     let hasDash = false;
 
-    for (let i = 0; i < length; i++) {
+    // Asegurarse de que el primer carácter no sea . o -
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+
+    for (let i = 1; i < length; i++) {
         if (Math.random() < 0.2 && !hasDot && !hasDash) {
             const char = specialChars.charAt(Math.floor(Math.random() * specialChars.length));
             if (char === '.') {
@@ -53,7 +56,19 @@ const generateUsername = () => {
 // Verifica si el perfil está en la base de datos de perfiles inválidos
 const isInvalid = (username) => {
     return new Promise((resolve, reject) => {
-        connection.query('SELECT * FROM invalid_profiles WHERE username = ?', [username], (err, results) => {
+        connection.query('SELECT * FROM invalidos WHERE url = ?', [username], (err, results) => {
+            if (err) {
+                return reject(err);
+            }
+            resolve(results.length > 0);
+        });
+    });
+};
+
+// Verifica si el perfil está en la base de datos de perfiles válidos
+const isValid = (username) => {
+    return new Promise((resolve, reject) => {
+        connection.query('SELECT * FROM validos WHERE url = ?', [username], (err, results) => {
             if (err) {
                 return reject(err);
             }
@@ -64,7 +79,7 @@ const isInvalid = (username) => {
 
 // Agrega un perfil no válido a la base de datos
 const addInvalid = (username) => {
-    connection.query('INSERT INTO invalid_profiles (username) VALUES (?)', [username], (err) => {
+    connection.query('INSERT INTO invalidos (url) VALUES (?)', [username], (err) => {
         if (err) {
             console.error('Error inserting invalid profile: ' + err.stack);
         } else {
@@ -75,7 +90,7 @@ const addInvalid = (username) => {
 
 // Agrega un perfil válido a la base de datos
 const addValid = (username) => {
-    connection.query('INSERT INTO valid_profiles (username) VALUES (?)', [username], (err) => {
+    connection.query('INSERT INTO validos (url) VALUES (?)', [username], (err) => {
         if (err) {
             console.error('Error inserting valid profile: ' + err.stack);
         } else {
@@ -84,25 +99,47 @@ const addValid = (username) => {
     });
 };
 
+// Ejecuta la verificación de perfiles
 const run = async () => {
     const browser = await puppeteer.launch();
     const page = await browser.newPage();
     const numUsernames = 10; // Número de nombres de usuario a generar
     let validProfilesCount = 0;
+    let invalidProfilesCount = 0;
 
     while (validProfilesCount < numUsernames) {
         const username = generateUsername();
+
+        // Verifica si el perfil ya está en la base de datos de perfiles válidos o inválidos
+        if (await isValid(username)) {
+            console.log(`The profile ${username} is already in valid profiles.`);
+            continue;
+        }
+
+        if (await isInvalid(username)) {
+            console.log(`The profile ${username} is in invalid profiles.`);
+            invalidProfilesCount++;
+            continue;
+        }
+
         const profileExists = await checkProfile(page, username);
+
         if (profileExists) {
             addValid(username);
             validProfilesCount++;
         } else {
             addInvalid(username);
+            invalidProfilesCount++;
         }
+
+        // Espera 100 ms entre peticiones
+        await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     await browser.close();
     connection.end();
+    console.log(`Total valid profiles: ${validProfilesCount}`);
+    console.log(`Total invalid profiles: ${invalidProfilesCount}`);
 };
 
 // Verifica si el perfil es válido o no
@@ -110,41 +147,20 @@ const checkProfile = async (page, username) => {
     const url = `https://onlyfans.com/${username}`;
     console.log(`Verifying URL: ${url}`);
 
-    if (await isInvalid(username)) {
-        console.log(`The profile ${username} is in the invalid profiles.`);
-        return false;
-    }
-    
     try {
-        const navigationPromise = page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
-        const result = await Promise.race([
-            navigationPromise,
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Navigation timeout')), 10000))
-        ]);
+        const html = await page.evaluate(() => document.body.innerHTML);
 
-        let html = '';
-        try {
-            await page.waitForSelector('body', { timeout: 10000 });
-            html = await page.evaluate(() => document.body.innerHTML);
-
-            if (html.includes('Sorry') && html.includes('this page is not available')) {
-                console.log(`The profile ${username} does not exist.`);
-                return false;
-            } else {
-                console.log(`The profile ${username} exists.`);
-                return true;
-            }
-        } catch (error) {
-            console.error(`Error waiting for selector: ${error.message}`);
+        if (html.includes('Sorry') && html.includes('this page is not available')) {
+            console.log(`The profile ${username} does not exist.`);
             return false;
+        } else {
+            console.log(`The profile ${username} exists.`);
+            return true;
         }
     } catch (error) {
-        if (error.message === 'Navigation timeout') {
-            console.log(`Navigation timeout for ${username}. Continuing to the next profile.`);
-        } else {
-            console.error(`Error navigating to the URL: ${error.message}`);
-        }
+        console.error(`Error navigating to the URL: ${error.message}`);
         return false;
     }
 };
