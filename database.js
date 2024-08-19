@@ -39,7 +39,8 @@ const setupDatabase = () => {
       // Crear las tablas si no existen
       const createValidosTable = `CREATE TABLE IF NOT EXISTS validos (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        url VARCHAR(255) NOT NULL
+        url VARCHAR(255) NOT NULL,
+        is_verified BOOLEAN DEFAULT FALSE
       )`;
 
       const createInvalidosTable = `CREATE TABLE IF NOT EXISTS invalidos (
