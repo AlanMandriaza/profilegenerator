@@ -17,77 +17,61 @@ const connection = mysql.createConnection({
     database: 'profiles_db'
 });
 
-// Función para respaldar los datos
-const backupData = () => {
-    const query = 'SELECT * FROM validos';
-
-    connection.query(query, (err, results) => {
-        if (err) {
-            console.error('Error fetching data from database:', err);
-            connection.end();
-            return;
-        }
-
-        const backupFile = 'backup.txt';
-        fs.writeFile(backupFile, JSON.stringify(results, null, 2), (err) => {
-            if (err) {
-                console.error('Error writing to file:', err);
-            } else {
-                console.log(`Data successfully backed up to ${backupFile}`);
-            }
-            connection.end();
+const queryAsync = (query, params) => {
+    return new Promise((resolve, reject) => {
+        connection.query(query, params, (err, results) => {
+            if (err) return reject(err);
+            resolve(results);
         });
     });
 };
 
+// Función para respaldar los datos
+const backupData = async () => {
+    try {
+        const results = await queryAsync('SELECT * FROM validos');
+        const backupFile = 'backup.txt';
+        fs.writeFileSync(backupFile, JSON.stringify(results, null, 2));
+        console.log(`Data successfully backed up to ${backupFile}`);
+    } catch (err) {
+        console.error('Error fetching data from database:', err);
+    } finally {
+        connection.end();
+    }
+};
+
 // Función para restaurar los datos
-const restoreData = () => {
+const restoreData = async () => {
     const backupFile = 'backup.txt';
 
-    // Verificar si el archivo de respaldo existe
     if (!fs.existsSync(backupFile)) {
         console.error(`Backup file ${backupFile} does not exist.`);
         connection.end();
         return;
     }
 
-    // Leer el archivo de respaldo
-    fs.readFile(backupFile, 'utf8', (err, data) => {
-        if (err) {
-            console.error('Error reading backup file:', err);
-            connection.end();
-            return;
-        }
-
-        // Convertir el contenido a un objeto JSON
+    try {
+        const data = fs.readFileSync(backupFile, 'utf8');
         const profiles = JSON.parse(data);
 
-        // Verificar y restaurar cada perfil
-        profiles.forEach((profile) => {
-            const query = 'SELECT COUNT(*) AS count FROM validos WHERE url = ?';
-            connection.query(query, [profile.url], (err, results) => {
-                if (err) {
-                    console.error('Error checking profile in database:', err);
-                } else {
-                    if (results[0].count === 0) {
-                        // Si no existe, insertarlo
-                        const insertQuery = 'INSERT INTO validos (url) VALUES (?)';
-                        connection.query(insertQuery, [profile.url], (err) => {
-                            if (err) {
-                                console.error('Error inserting profile into database:', err);
-                            } else {
-                                console.log(`Profile ${profile.url} restored to database.`);
-                            }
-                        });
-                    } else {
-                        console.log(`Profile ${profile.url} already exists in database.`);
-                    }
-                }
-            });
-        });
+        for (const profile of profiles) {
+            const results = await queryAsync('SELECT is_verified FROM validos WHERE url = ?', [profile.url]);
 
+            if (results.length === 0) {
+                await queryAsync('INSERT INTO validos (url, is_verified) VALUES (?, TRUE)', [profile.url]);
+                console.log(`Profile ${profile.url} restored and marked as verified.`);
+            } else if (!results[0].is_verified) {
+                await queryAsync('UPDATE validos SET is_verified = TRUE WHERE url = ?', [profile.url]);
+                console.log(`Profile ${profile.url} was updated to verified.`);
+            } else {
+                console.log(`Profile ${profile.url} is already verified in the database.`);
+            }
+        }
+    } catch (err) {
+        console.error('Error restoring profiles:', err);
+    } finally {
         connection.end();
-    });
+    }
 };
 
 // Función principal para seleccionar entre respaldar o restaurar
