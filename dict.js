@@ -37,19 +37,19 @@ const fetchUsernamesFromApi = async () => {
 };
 
 // Verificar si el perfil ya existe en la base de datos
-const profileExistsInDatabase = (username) => {
+const profileExistsInDatabase = async (username) => {
     return new Promise((resolve, reject) => {
         const query = `
-            SELECT is_verified FROM validos WHERE url = ?
-            UNION
-            SELECT NULL AS is_verified FROM invalidos WHERE url = ?
+            SELECT 'validos' AS table_name, is_verified FROM validos WHERE url = ?
+            UNION ALL
+            SELECT 'invalidos' AS table_name, NULL AS is_verified FROM invalidos WHERE url = ?
         `;
         connection.query(query, [username, username], (err, results) => {
             if (err) {
                 reject(err);
             } else {
                 if (results.length > 0) {
-                    resolve(results[0].is_verified);
+                    resolve(results[0]);
                 } else {
                     resolve(null);
                 }
@@ -91,6 +91,7 @@ const updateVerificationStatus = (username, isVerified) => {
     });
 };
 
+// Esperar un tiempo específico
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Verificar el perfil en la web
@@ -98,18 +99,20 @@ const checkProfile = async (page, username) => {
     const url = `https://onlyfans.com/${username}`;
     console.log(`Verifying URL: ${url}`);
 
-    const isVerified = await profileExistsInDatabase(username);
+    const profileData = await profileExistsInDatabase(username);
 
-    if (isVerified !== null) {
-        if (isVerified) {
+    if (profileData) {
+        if (profileData.table_name === 'validos') {
             console.log(`The profile ${username} is already verified.`);
             return;
-        } else {
-            console.log(`The profile ${username} is in invalidos.`);
+        } else if (profileData.table_name === 'invalidos') {
+            console.log(`The profile ${username} is already marked as invalid.`);
+            return;
         }
     }
 
     try {
+        // Navegar a la URL y esperar a que la red esté inactiva
         const navigationPromise = page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
         const result = await Promise.race([
@@ -122,16 +125,30 @@ const checkProfile = async (page, username) => {
             await page.waitForSelector('body', { timeout: 10000 });
             html = await page.evaluate(() => document.body.innerHTML);
 
+            // Verificar si el perfil no existe
             if (html.includes('Sorry') && html.includes('this page is not available')) {
                 console.log(`The profile ${username} does not exist.`);
                 await insertProfile(username, false);
                 invalidCount++;
                 invalidProfilesCount++;
             } else {
-                console.log(`The profile ${username} exists.`);
-                await insertProfile(username, true);
-                validCount++;
-                await updateVerificationStatus(username, true); // Actualizar el estado a verificado
+                // Verificar si el perfil está verificado usando el selector
+                const isVerified = await page.evaluate(() => {
+                    // Ejemplo de selector: Actualiza con el selector real de la verificación
+                    const badge = document.querySelector('.verified-badge-selector'); // Reemplaza con el selector correcto
+                    return badge !== null;
+                });
+
+                if (isVerified) {
+                    console.log(`The profile ${username} is verified and exists.`);
+                    await insertProfile(username, true);
+                    validCount++;
+                    await updateVerificationStatus(username, true); // Actualizar el estado a verificado
+                } else {
+                    console.log(`The profile ${username} exists but is not verified.`);
+                    await insertProfile(username, false);
+                    invalidCount++;
+                }
             }
         } catch (error) {
             console.error(`Error waiting for selector: ${error.message}`);
@@ -178,7 +195,9 @@ const run = async () => {
         const username = usernames[i];
         await checkProfile(page, username);
         printProgress(i + 1, totalProfiles);
-        await delay(100); // Esperar 100 ms entre peticiones
+        if (i < usernames.length - 1) {
+            await delay(100); // Esperar 100 ms entre peticiones a la página
+        }
     }
 
     console.log(`Verification complete. Valid profiles: ${validCount}, Invalid profiles: ${invalidCount}`);
