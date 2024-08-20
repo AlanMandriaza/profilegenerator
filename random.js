@@ -99,6 +99,44 @@ const addValid = (username) => {
     });
 };
 
+// Actualiza el perfil en la base de datos para marcarlo como verificado
+const markProfileAsVerified = (username) => {
+    connection.query('UPDATE validos SET is_verified = 1 WHERE url = ?', [username], (err) => {
+        if (err) {
+            console.error('Error updating verification status: ' + err.stack);
+        } else {
+            console.log(`Marked profile ${username} as verified.`);
+        }
+    });
+};
+
+// Verifica si el perfil es válido o no
+const checkProfile = async (page, username) => {
+    const url = `https://onlyfans.com/${username}`;
+    console.log(`Verifying URL: ${url}`);
+
+    try {
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+        const profileIsVerified = await page.evaluate(() => {
+            // Busca el elemento que indica que el perfil está verificado
+            const verifiedElement = document.querySelector('.g-user-name.m-verified');
+            return verifiedElement !== null;
+        });
+
+        if (profileIsVerified) {
+            console.log(`The profile ${username} is verified.`);
+            return true;
+        } else {
+            console.log(`The profile ${username} is not verified.`);
+            return false;
+        }
+    } catch (error) {
+        console.error(`Error navigating to the URL: ${error.message}`);
+        return false;
+    }
+};
+
 // Ejecuta la verificación de perfiles
 const run = async () => {
     const browser = await puppeteer.launch();
@@ -126,6 +164,7 @@ const run = async () => {
 
         if (profileExists) {
             addValid(username);
+            markProfileAsVerified(username); // Marcar el perfil como verificado
             validProfilesCount++;
         } else {
             addInvalid(username);
@@ -140,29 +179,6 @@ const run = async () => {
     connection.end();
     console.log(`Total valid profiles: ${validProfilesCount}`);
     console.log(`Total invalid profiles: ${invalidProfilesCount}`);
-};
-
-// Verifica si el perfil es válido o no
-const checkProfile = async (page, username) => {
-    const url = `https://onlyfans.com/${username}`;
-    console.log(`Verifying URL: ${url}`);
-
-    try {
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-
-        const html = await page.evaluate(() => document.body.innerHTML);
-
-        if (html.includes('Sorry') && html.includes('this page is not available')) {
-            console.log(`The profile ${username} does not exist.`);
-            return false;
-        } else {
-            console.log(`The profile ${username} exists.`);
-            return true;
-        }
-    } catch (error) {
-        console.error(`Error navigating to the URL: ${error.message}`);
-        return false;
-    }
 };
 
 run();

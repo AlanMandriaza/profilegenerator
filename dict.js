@@ -23,8 +23,9 @@ connection.connect((err) => {
 let validCount = 0;
 let invalidCount = 0;
 let totalProfiles = 0;
-let invalidProfilesCount = 0; // Contador para perfiles no válidos obtenidos desde la API
+let invalidProfilesCount = 0;
 
+// Obtener nombres de usuario desde la API
 const fetchUsernamesFromApi = async () => {
     try {
         const response = await axios.get('https://random-word-api.herokuapp.com/all');
@@ -35,19 +36,20 @@ const fetchUsernamesFromApi = async () => {
     }
 };
 
+// Verificar si el perfil ya existe en la base de datos
 const profileExistsInDatabase = (username) => {
     return new Promise((resolve, reject) => {
         const query = `
-            SELECT 'validos' AS table_name FROM validos WHERE url = ?
+            SELECT is_verified FROM validos WHERE url = ?
             UNION
-            SELECT 'invalidos' AS table_name FROM invalidos WHERE url = ?
+            SELECT NULL AS is_verified FROM invalidos WHERE url = ?
         `;
         connection.query(query, [username, username], (err, results) => {
             if (err) {
                 reject(err);
             } else {
                 if (results.length > 0) {
-                    resolve(results[0].table_name);
+                    resolve(results[0].is_verified);
                 } else {
                     resolve(null);
                 }
@@ -56,6 +58,7 @@ const profileExistsInDatabase = (username) => {
     });
 };
 
+// Insertar perfil en la base de datos
 const insertProfile = (username, isValid) => {
     return new Promise((resolve, reject) => {
         const table = isValid ? 'validos' : 'invalidos';
@@ -72,15 +75,38 @@ const insertProfile = (username, isValid) => {
     });
 };
 
+// Actualizar el estado de verificación del perfil
+const updateVerificationStatus = (username, isVerified) => {
+    return new Promise((resolve, reject) => {
+        const query = `UPDATE validos SET is_verified = ? WHERE url = ?`;
+
+        connection.query(query, [isVerified, username], (err, results) => {
+            if (err) {
+                console.error(`Error updating verification status for ${username}: ${err.message}`);
+                reject(err);
+            } else {
+                resolve(results);
+            }
+        });
+    });
+};
+
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Verificar el perfil en la web
 const checkProfile = async (page, username) => {
     const url = `https://onlyfans.com/${username}`;
     console.log(`Verifying URL: ${url}`);
 
-    if (await profileExistsInDatabase(username)) {
-        console.log(`The profile ${username} already exists in the database.`);
-        return;
+    const isVerified = await profileExistsInDatabase(username);
+
+    if (isVerified !== null) {
+        if (isVerified) {
+            console.log(`The profile ${username} is already verified.`);
+            return;
+        } else {
+            console.log(`The profile ${username} is in invalidos.`);
+        }
     }
 
     try {
@@ -105,6 +131,7 @@ const checkProfile = async (page, username) => {
                 console.log(`The profile ${username} exists.`);
                 await insertProfile(username, true);
                 validCount++;
+                await updateVerificationStatus(username, true); // Actualizar el estado a verificado
             }
         } catch (error) {
             console.error(`Error waiting for selector: ${error.message}`);
@@ -124,6 +151,7 @@ const checkProfile = async (page, username) => {
     }
 };
 
+// Mostrar el progreso
 const printProgress = (current, total) => {
     const percentage = ((current / total) * 100).toFixed(2);
     console.log(`Processing profile ${current} / ${total} (${percentage}%)`);
@@ -135,7 +163,7 @@ const run = async () => {
     const browser = await puppeteer.launch();
     const page = await browser.newPage();
     const usernames = await fetchUsernamesFromApi();
-    
+
     if (usernames.length === 0) {
         console.log('No usernames fetched from the API.');
         return;
