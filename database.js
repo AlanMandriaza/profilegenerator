@@ -40,7 +40,8 @@ const setupDatabase = () => {
       const createValidosTable = `CREATE TABLE IF NOT EXISTS validos (
         id INT AUTO_INCREMENT PRIMARY KEY,
         url VARCHAR(255) NOT NULL,
-        is_verified BOOLEAN DEFAULT FALSE
+        is_verified BOOLEAN DEFAULT FALSE,
+        subscription_attempted BOOLEAN DEFAULT FALSE
       )`;
 
       const createInvalidosTable = `CREATE TABLE IF NOT EXISTS invalidos (
