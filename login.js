@@ -29,7 +29,7 @@ const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Función principal para ejecutar el script
 const run = async () => {
-    const browser = await puppeteer.launch({ headless: false });
+    const browser = await puppeteer.launch({ headless: false }); // No headless, para ver la ventana del navegador
     const page = await browser.newPage();
     let profiles = new Set();
     let profileCount = 0;
@@ -107,7 +107,7 @@ const run = async () => {
             }
         };
 
-        await wait (15000);        // Función para hacer scroll fluido y constante
+        // Función para hacer scroll fluido y constante
         const scrollContinuously = async () => {
             let previousHeight = 0;
             let currentHeight = 0;
@@ -119,15 +119,15 @@ const run = async () => {
                     // Hacer scroll hacia abajo en incrementos pequeños
                     await page.evaluate('window.scrollBy(0, window.innerHeight)');
                     // Esperar a que el contenido nuevo se cargue
-                    await wait(1000);
-
+                    await wait(2000); // Ajusta el tiempo de espera según sea necesario
+                    
                     // Extraer perfiles después de cada desplazamiento
                     await extractAndSaveProfiles();
 
                     // Obtener la altura después del scroll
                     currentHeight = await page.evaluate('document.body.scrollHeight');
 
-                    // Si no hay nuevo contenido, detener el scroll
+                    // Si no hay nuevo contenido, continuar haciendo scroll
                     if (currentHeight === previousHeight) {
                         console.log('No new content detected. Continuing to scroll...');
                     }
@@ -144,8 +144,11 @@ const run = async () => {
     } catch (error) {
         console.error('Error during login or profile extraction:', error);
     } finally {
-        await browser.close();
-        connection.end();
+        // Mantener el navegador abierto
+        console.log('Script completed. Browser will remain open.');
+        
+        // Puedes eliminar la línea `connection.end();` si no deseas cerrar la conexión a la base de datos
+        // connection.end();
     }
 };
 
@@ -159,4 +162,5 @@ const restartEvery15Minutes = async () => {
     }
 };
 
+// Iniciar el proceso
 restartEvery15Minutes();

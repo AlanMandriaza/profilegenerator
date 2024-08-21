@@ -55,16 +55,18 @@ const restoreData = async () => {
         const profiles = JSON.parse(data);
 
         for (const profile of profiles) {
-            const results = await queryAsync('SELECT is_verified FROM validos WHERE url = ?', [profile.url]);
+            const { url } = profile; // Extraer solo los campos necesarios
+
+            const results = await queryAsync('SELECT is_verified FROM validos WHERE url = ?', [url]);
 
             if (results.length === 0) {
-                await queryAsync('INSERT INTO validos (url, is_verified) VALUES (?, TRUE)', [profile.url]);
-                console.log(`Profile ${profile.url} restored and marked as verified.`);
+                await queryAsync('INSERT INTO validos (url, is_verified) VALUES (?, TRUE)', [url]);
+                console.log(`Profile ${url} restored and marked as verified.`);
             } else if (!results[0].is_verified) {
-                await queryAsync('UPDATE validos SET is_verified = TRUE WHERE url = ?', [profile.url]);
-                console.log(`Profile ${profile.url} was updated to verified.`);
+                await queryAsync('UPDATE validos SET is_verified = TRUE WHERE url = ?', [url]);
+                console.log(`Profile ${url} was updated to verified.`);
             } else {
-                console.log(`Profile ${profile.url} is already verified in the database.`);
+                console.log(`Profile ${url} is already verified in the database.`);
             }
         }
     } catch (err) {
