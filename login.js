@@ -29,10 +29,11 @@ const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Función principal para ejecutar el script
 const run = async () => {
-    const browser = await puppeteer.launch({ headless: false }); // No headless, para ver la ventana del navegador
+    const browser = await puppeteer.launch({ headless: false });
     const page = await browser.newPage();
     let profiles = new Set();
     let profileCount = 0;
+    const startTime = Date.now();
 
     try {
         console.log('Navigating to the OnlyFans login page...');
@@ -76,10 +77,6 @@ const run = async () => {
 
                 for (const profile of profilesOnPage) {
                     if (!profiles.has(profile)) {
-                        profiles.add(profile);
-                        profileCount++;
-                        console.log(`New profile added: ${profile}. Total count: ${profileCount}`);
-
                         // Verificar si el perfil ya existe en la base de datos
                         connection.query('SELECT COUNT(*) AS count FROM validos WHERE url = ?', [profile], (err, results) => {
                             if (err) {
@@ -92,7 +89,9 @@ const run = async () => {
                                         if (err) {
                                             console.error('Error inserting profile into database:', err);
                                         } else {
-                                            console.log(`Profile ${profile} inserted into database.`);
+                                            profiles.add(profile); // Agregar a Set solo si se inserta en la base de datos
+                                            profileCount++;
+                                            console.log(`Profile ${profile} inserted into database. Total count: ${profileCount}`);
                                         }
                                     });
                                 } else {
@@ -107,7 +106,7 @@ const run = async () => {
             }
         };
 
-        // Función para hacer scroll fluido y constante
+        // Función para hacer scroll al final de la página cada 2 segundos
         const scrollContinuously = async () => {
             let previousHeight = 0;
             let currentHeight = 0;
@@ -116,18 +115,18 @@ const run = async () => {
                 try {
                     // Obtener la altura actual de la página
                     previousHeight = await page.evaluate('document.body.scrollHeight');
-                    // Hacer scroll hacia abajo en incrementos pequeños
-                    await page.evaluate('window.scrollBy(0, window.innerHeight)');
+                    // Hacer scroll hacia abajo hasta el final de la página
+                    await page.evaluate('window.scrollTo(0, document.body.scrollHeight)');
                     // Esperar a que el contenido nuevo se cargue
-                    await wait(2000); // Ajusta el tiempo de espera según sea necesario
-                    
+                    await wait(2000);
+
                     // Extraer perfiles después de cada desplazamiento
                     await extractAndSaveProfiles();
 
                     // Obtener la altura después del scroll
                     currentHeight = await page.evaluate('document.body.scrollHeight');
 
-                    // Si no hay nuevo contenido, continuar haciendo scroll
+                    // Si no hay nuevo contenido, detener el scroll
                     if (currentHeight === previousHeight) {
                         console.log('No new content detected. Continuing to scroll...');
                     }
@@ -144,11 +143,16 @@ const run = async () => {
     } catch (error) {
         console.error('Error during login or profile extraction:', error);
     } finally {
-        // Mantener el navegador abierto
-        console.log('Script completed. Browser will remain open.');
-        
-        // Puedes eliminar la línea `connection.end();` si no deseas cerrar la conexión a la base de datos
-        // connection.end();
+        const endTime = Date.now();
+        const elapsedTimeMinutes = (endTime - startTime) / (1000 * 60);
+        const profilesPerMinute = (profileCount / elapsedTimeMinutes).toFixed(2);
+
+        console.log(`Total profiles added: ${profileCount}`);
+        console.log(`Elapsed time: ${elapsedTimeMinutes.toFixed(2)} minutes`);
+        console.log(`Average profiles added per minute: ${profilesPerMinute}`);
+
+        await browser.close();
+        connection.end();
     }
 };
 
@@ -162,5 +166,4 @@ const restartEvery15Minutes = async () => {
     }
 };
 
-// Iniciar el proceso
 restartEvery15Minutes();
