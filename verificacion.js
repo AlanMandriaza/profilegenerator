@@ -27,8 +27,11 @@ const checkProfileOnWeb = async (page, username) => {
     try {
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
+        // Verifica si el perfil está verificado
         const isVerified = await page.evaluate(() => {
-            return document.querySelector(".g-user-name.m-verified") !== null;
+            const element = document.querySelector('svg.m-verified');
+            console.log('Verification SVG found:', !!element); // Debug: Verifica si el SVG fue encontrado
+            return element !== null;
         });
 
         return isVerified;

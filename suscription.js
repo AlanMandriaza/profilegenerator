@@ -20,7 +20,7 @@ connection.connect((err) => {
 });
 
 const credentials = {
-    username: 'alan.mandriaza@gmail.com',
+    username: 'alan.mandriaza@outlook.es',
     password: 'Alecita#1313'
 };
 
