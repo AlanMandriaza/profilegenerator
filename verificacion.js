@@ -27,10 +27,10 @@ const checkProfileOnWeb = async (page, username) => {
     try {
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
-        // Verifica si el perfil está verificado
+        // Verifica si el perfil está verificado buscando el texto específico en el atributo href
         const isVerified = await page.evaluate(() => {
-            const element = document.querySelector('svg.m-verified');
-            console.log('Verification SVG found:', !!element); // Debug: Verifica si el SVG fue encontrado
+            // Busca si hay algún 'use' con el atributo href que contiene 'icon-verified'
+            const element = document.querySelector('svg use[href*="icon-verified"]');
             return element !== null;
         });
 
@@ -95,8 +95,18 @@ const run = async () => {
         const totalProfiles = profiles.length;
         console.log(`Found ${totalProfiles} profiles to check.`);
 
-        for (let i = 0; i < totalProfiles; i++) {
-            const { url: username, is_verified } = profiles[i];
+        const checkedProfiles = new Set();
+
+        while (checkedProfiles.size < totalProfiles) {
+            // Selecciona un perfil al azar que no se haya verificado antes
+            let randomProfile;
+            do {
+                const randomIndex = Math.floor(Math.random() * totalProfiles);
+                randomProfile = profiles[randomIndex];
+            } while (checkedProfiles.has(randomProfile.url));
+
+            checkedProfiles.add(randomProfile.url);
+            const { url: username, is_verified } = randomProfile;
 
             if (is_verified) {
                 // Mostrar que el perfil ya está verificado y se omite
@@ -112,7 +122,7 @@ const run = async () => {
             }
 
             // Mostrar el progreso restante
-            console.log(`Progress: ${i + 1}/${totalProfiles} profiles checked.`);
+            console.log(`Progress: ${checkedProfiles.size}/${totalProfiles} profiles checked.`);
 
             // Espera 100 ms entre peticiones
             await new Promise(resolve => setTimeout(resolve, 100));

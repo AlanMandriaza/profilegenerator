@@ -29,7 +29,7 @@ const queryAsync = (query, params) => {
 // Función para respaldar los datos
 const backupData = async () => {
     try {
-        const results = await queryAsync('SELECT * FROM validos');
+        const results = await queryAsync('SELECT url, is_verified, subscription_attempted FROM validos');
         const backupFile = 'backup.txt';
         fs.writeFileSync(backupFile, JSON.stringify(results, null, 2));
         console.log(`Data successfully backed up to ${backupFile}`);
@@ -55,18 +55,17 @@ const restoreData = async () => {
         const profiles = JSON.parse(data);
 
         for (const profile of profiles) {
-            const { url } = profile; // Extraer solo los campos necesarios
+            const { url, is_verified, subscription_attempted } = profile; // Extraer solo los campos necesarios
 
-            const results = await queryAsync('SELECT is_verified FROM validos WHERE url = ?', [url]);
+            // Primero, intenta actualizar el registro existente
+            const [updateResults] = await queryAsync('UPDATE validos SET is_verified = ?, subscription_attempted = ? WHERE url = ?', [is_verified, subscription_attempted, url]);
 
-            if (results.length === 0) {
-                await queryAsync('INSERT INTO validos (url, is_verified) VALUES (?, TRUE)', [url]);
-                console.log(`Profile ${url} restored and marked as verified.`);
-            } else if (!results[0].is_verified) {
-                await queryAsync('UPDATE validos SET is_verified = TRUE WHERE url = ?', [url]);
-                console.log(`Profile ${url} was updated to verified.`);
+            if (updateResults.affectedRows === 0) {
+                // Si no se actualizó ningún registro, inserta uno nuevo
+                await queryAsync('INSERT INTO validos (url, is_verified, subscription_attempted) VALUES (?, ?, ?)', [url, is_verified, subscription_attempted]);
+                console.log(`Profile ${url} restored.`);
             } else {
-                console.log(`Profile ${url} is already verified in the database.`);
+                console.log(`Profile ${url} was updated.`);
             }
         }
     } catch (err) {
